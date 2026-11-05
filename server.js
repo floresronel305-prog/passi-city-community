@@ -2,7 +2,8 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const DATA = process.env.DATA_FILE || path.join(__dirname, 'data.json');
-const FILES = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js' };
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'floresronel305@gmail.com').trim().toLowerCase();
+const FILES = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js', '/admin.js': 'admin.js' };
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
 
 let db = { users: [], bikes: [], sessions: {} };
@@ -21,7 +22,8 @@ const readBody = req => new Promise(ok => {
 });
 const pick = (o, keys) => Object.fromEntries(keys.map(k => [k, String(o[k] ?? '').trim().slice(0, 100)]));
 const BIKE_KEYS = ['owner', 'contact', 'brgy', 'brand', 'model', 'type', 'frame', 'size', 'group'];
-const publicUser = u => ({ id: u.id, name: u.name, brgy: u.brgy });
+const isAdmin = u => u?.email?.toLowerCase() === ADMIN_EMAIL;
+const publicUser = u => ({ id: u.id, name: u.name, brgy: u.brgy, isAdmin: isAdmin(u) });
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
@@ -32,6 +34,13 @@ http.createServer(async (req, res) => {
   const f = FILES[url.pathname];
   if (!f) { res.writeHead(404); return res.end('Not found'); }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] + '; charset=utf-8' });
+  if (f === 'index.html') {
+    return fs.readFile(path.join(__dirname, f), 'utf8', (err, html) => {
+      if (err) { res.writeHead(500); return res.end('Unable to load page'); }
+      // Load the small admin UI after the existing application scripts without requiring a manual HTML edit.
+      res.end(html.replace('</body>', '  <script src="/admin.js"></script>\n</body>'));
+    });
+  }
   fs.createReadStream(path.join(__dirname, f)).pipe(res);
 }).listen(PORT, () => console.log('Passi City Community running at http://localhost:' + PORT));
 
@@ -63,16 +72,22 @@ async function route(req, res, p) {
   }
 
   if (!user) return json(res, 401, { error: 'Please log in first.' });
+  if (p.startsWith('/admin/') && !isAdmin(user)) return json(res, 403, { error: 'Administrator access required.' });
 
   if (p === '/logout' && m === 'POST') { delete db.sessions[token]; save(); return json(res, 200, { ok: true }); }
   if (p === '/bikes' && m === 'GET') return json(res, 200, db.bikes);
+
+  if (p === '/admin/users' && m === 'GET') {
+    const users = db.users.map(u => ({ id: u.id, name: u.name, email: u.email, brgy: u.brgy, isAdmin: isAdmin(u) }));
+    return json(res, 200, users);
+  }
 
   if (p === '/bikes' && m === 'POST') {
     const b = await readBody(req), d = pick(b, BIKE_KEYS);
     if (!d.owner || !d.contact || !d.brand || !d.model) return json(res, 400, { error: 'Owner, contact, brand and model are required.' });
     const i = db.bikes.findIndex(x => x.id === b.id);
     if (i > -1) {
-      if (db.bikes[i].by !== user.id) return json(res, 403, { error: 'You can only edit your own bikes.' });
+      if (db.bikes[i].by !== user.id && !isAdmin(user)) return json(res, 403, { error: 'You can only edit your own bikes.' });
       db.bikes[i] = { ...db.bikes[i], ...d };
     } else db.bikes.push({ id: crypto.randomUUID(), by: user.id, ...d });
     save(); return json(res, 200, { ok: true });
@@ -82,7 +97,7 @@ async function route(req, res, p) {
   if (del && m === 'DELETE') {
     const b = db.bikes.find(x => x.id === del[1]);
     if (!b) return json(res, 404, { error: 'Bike not found.' });
-    if (b.by !== user.id) return json(res, 403, { error: 'You can only delete your own bikes.' });
+    if (b.by !== user.id && !isAdmin(user)) return json(res, 403, { error: 'You can only delete your own bikes.' });
     db.bikes = db.bikes.filter(x => x.id !== b.id); save(); return json(res, 200, { ok: true });
   }
   return json(res, 404, { error: 'Not found' });
