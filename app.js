@@ -71,6 +71,7 @@ const BARANGAYS = [
   'Mambiranan Pequeño',
   'Mambunan',
   'Man-it',
+   'Mantulang',
   'Mulapula',
   'Nagsulang',
   'Pagaypay',
