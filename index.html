@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passi City Community | Cyclists Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- Animated background -->
+<div class="bg" aria-hidden="true">
+  <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
+  <div class="grid"></div>
+  <svg class="routes" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+    <path d="M-50 600 C 200 450, 350 700, 600 520 S 1000 300, 1250 420"/>
+    <path d="M-50 300 C 150 200, 400 380, 650 260 S 1050 120, 1250 220"/>
+    <path d="M-50 740 C 250 680, 500 780, 800 650 S 1100 600, 1250 680"/>
+  </svg>
+</div>
+
+<header class="nav glass">
+  <a class="brand" href="#top"><span class="logo">P</span>Passi City Community</a>
+  <nav>
+    <a href="#flow">How it works</a>
+    <a href="#auth" id="navAuth">Join</a>
+    <a href="#bikes" class="gated">Bikes</a>
+    <a href="#routes" class="gated">Routes</a>
+    <button id="logoutBtn" class="btn ghost" hidden>Log out</button>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-text">
+      <p class="chip">Passi City, Iloilo</p>
+      <h1>Ride together. Register your bike. Find your route.</h1>
+      <p class="lead">A community platform for local cyclists to register bikes, follow Passi's best routes, and track every ride live.</p>
+      <div class="cta">
+        <a class="btn primary" href="#auth">Create free account</a>
+        <a class="btn ghost" href="#flow">See how it works</a>
+      </div>
+    </div>
+    <div class="hero-card glass float">
+      <div class="stat"><b id="sMembers">0</b><span>Members</span></div>
+      <div class="stat"><b id="sBikes">0</b><span>Bikes registered</span></div>
+      <div class="stat"><b id="sRoutes">4</b><span>Local routes</span></div>
+    </div>
+  </section>
+
+  <section id="flow" class="sec">
+    <h2>System flowchart</h2>
+    <p class="sub">Tap a step to see what happens.</p>
+    <div class="flow" id="flowchart"></div>
+    <div class="glass flow-info" id="flowInfo">Select a step above.</div>
+  </section>
+
+  <section id="auth" class="sec">
+    <h2>Member portal</h2>
+    <div class="glass auth">
+      <div id="authForms">
+        <div class="tabs"><button class="tab on" data-t="reg">Register</button><button class="tab" data-t="log">Log in</button></div>
+        <form id="regForm">
+          <label>Full name<input name="name" required></label>
+          <label>Email<input name="email" type="email" required></label>
+          <label>Barangay<select name="brgy" id="brgySel" required></select></label>
+          <label>Password<input name="pw" type="password" minlength="6" required></label>
+          <button class="btn primary">Create account</button>
+        </form>
+        <form id="logForm" hidden>
+          <label>Email<input name="email" type="email" required></label>
+          <label>Password<input name="pw" type="password" required></label>
+          <button class="btn primary">Log in</button>
+        </form>
+      </div>
+      <div id="welcome" hidden></div>
+    </div>
+  </section>
+
+  <section id="bikes" class="sec locked" hidden>
+    <h2>Bike &amp; owner registry</h2>
+    <div class="split">
+      <form id="bikeForm" class="glass pad">
+        <h3 id="bikeFormTitle">Register a bike</h3>
+        <label>Owner name<input name="owner" required></label>
+        <label>Contact number<input name="contact" required></label>
+        <label>Barangay<select name="brgy" id="brgySel2" required></select></label>
+        <div class="two">
+          <label>Brand<input name="brand" required></label>
+          <label>Model<input name="model" required></label>
+        </div>
+        <div class="two">
+          <label>Type<select name="type"><option>Road</option><option>Mountain</option><option>Gravel</option><option>Hybrid</option><option>Folding</option></select></label>
+          <label>Frame material<select name="frame"><option>Aluminum</option><option>Carbon</option><option>Steel</option><option>Titanium</option></select></label>
+        </div>
+        <div class="two">
+          <label>Frame size<input name="size" placeholder="e.g. 54cm / M"></label>
+          <label>Groupset<input name="group" placeholder="e.g. Shimano 105"></label>
+        </div>
+        <button class="btn primary" id="bikeSave">Save bike</button>
+        <button type="button" class="btn ghost" id="bikeCancel" hidden>Cancel edit</button>
+      </form>
+      <div>
+        <input id="bikeSearch" class="search glass" placeholder="Search by owner, brand or barangay">
+        <div id="bikeList" class="cards"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="routes" class="sec locked" hidden>
+    <h2>Routes &amp; live ride</h2>
+    <div class="split rev">
+      <div class="glass pad">
+        <h3>Local routes</h3>
+        <div id="routeList"></div>
+        <h3 class="mt">Live ride tracking</h3>
+        <div class="live">
+          <div><b id="lDist">0.00</b><span>km</span></div>
+          <div><b id="lTime">00:00</b><span>time</span></div>
+          <div><b id="lSpeed">0.0</b><span>km/h</span></div>
+        </div>
+        <button class="btn primary" id="rideBtn">Start ride</button>
+        <p class="note" id="rideNote">Allow location access to track your ride.</p>
+      </div>
+      <div id="map" class="glass"></div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="glass dev"><span class="logo">R</span><div><small>Developed by</small><br><b>Ronel Sigaya Flores</b></div></div><p>Passi City Community · Built with HTML, CSS and JavaScript</p></footer>
+<div id="toast" class="toast glass"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
