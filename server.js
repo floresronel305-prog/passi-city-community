@@ -23,7 +23,8 @@ const readBody = req => new Promise(ok => {
 const pick = (o, keys) => Object.fromEntries(keys.map(k => [k, String(o[k] ?? '').trim().slice(0, 100)]));
 const BIKE_KEYS = ['owner', 'contact', 'brgy', 'brand', 'model', 'type', 'frame', 'size', 'group'];
 const isAdmin = u => u?.email?.toLowerCase() === ADMIN_EMAIL;
-const publicUser = u => ({ id: u.id, name: u.name, brgy: u.brgy, isAdmin: isAdmin(u) });
+const approvalStatus = u => isAdmin(u) ? 'approved' : (u.approvalStatus || 'approved');
+const publicUser = u => ({ id: u.id, name: u.name, brgy: u.brgy, isAdmin: isAdmin(u), approvalStatus: approvalStatus(u) });
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
@@ -37,7 +38,6 @@ http.createServer(async (req, res) => {
   if (f === 'index.html') {
     return fs.readFile(path.join(__dirname, f), 'utf8', (err, html) => {
       if (err) { res.writeHead(500); return res.end('Unable to load page'); }
-      // Load the small admin UI after the existing application scripts without requiring a manual HTML edit.
       res.end(html.replace('</body>', '  <script src="/admin.js"></script>\n</body>'));
     });
   }
@@ -57,7 +57,7 @@ async function route(req, res, p) {
     if (!d.name || !/^\S+@\S+\.\S+$/.test(d.email) || !d.brgy || pw.length < 6)
       return json(res, 400, { error: 'Fill in all fields. Password needs 6+ characters.' });
     if (db.users.some(u => u.email === d.email)) return json(res, 409, { error: 'This email is already registered.' });
-    const u = { id: crypto.randomUUID(), ...d, pw: hashPw(pw) };
+    const u = { id: crypto.randomUUID(), ...d, pw: hashPw(pw), approvalStatus: d.email === ADMIN_EMAIL ? 'approved' : 'pending' };
     const t = crypto.randomBytes(24).toString('hex');
     db.users.push(u); db.sessions[t] = u.id; save();
     return json(res, 201, { token: t, user: publicUser(u) });
@@ -73,13 +73,30 @@ async function route(req, res, p) {
 
   if (!user) return json(res, 401, { error: 'Please log in first.' });
   if (p.startsWith('/admin/') && !isAdmin(user)) return json(res, 403, { error: 'Administrator access required.' });
-
+  if (p === '/me' && m === 'GET') return json(res, 200, { user: publicUser(user) });
   if (p === '/logout' && m === 'POST') { delete db.sessions[token]; save(); return json(res, 200, { ok: true }); }
+  if (!isAdmin(user) && approvalStatus(user) !== 'approved') {
+    const message = approvalStatus(user) === 'rejected' ? 'Your membership request was not approved. Contact the administrator for help.' : 'Your membership is awaiting administrator approval.';
+    return json(res, 403, { error: message, approvalStatus: approvalStatus(user) });
+  }
+
   if (p === '/bikes' && m === 'GET') return json(res, 200, db.bikes);
 
   if (p === '/admin/users' && m === 'GET') {
-    const users = db.users.map(u => ({ id: u.id, name: u.name, email: u.email, brgy: u.brgy, isAdmin: isAdmin(u) }));
+    const users = db.users.map(u => ({ id: u.id, name: u.name, email: u.email, brgy: u.brgy, isAdmin: isAdmin(u), approvalStatus: approvalStatus(u) }));
     return json(res, 200, users);
+  }
+
+  const approval = p.match(/^\/admin\/users\/([\w-]+)\/approval$/);
+  if (approval && m === 'POST') {
+    const target = db.users.find(u => u.id === approval[1]);
+    if (!target) return json(res, 404, { error: 'Member not found.' });
+    if (isAdmin(target)) return json(res, 403, { error: 'The administrator account cannot be changed here.' });
+    const { status } = await readBody(req);
+    if (!['approved', 'rejected'].includes(status)) return json(res, 400, { error: 'Choose approved or rejected.' });
+    target.approvalStatus = status;
+    save();
+    return json(res, 200, { user: { id: target.id, approvalStatus: approvalStatus(target) } });
   }
 
   if (p === '/bikes' && m === 'POST') {

@@ -1,6 +1,5 @@
 'use strict';
 (() => {
-  const ADMIN_EMAIL = 'floresronel305@gmail.com';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const token = () => localStorage.getItem('token');
   const request = async (path, method = 'GET', body) => {
@@ -14,7 +13,7 @@
     return data;
   };
   const session = () => { try { return JSON.parse(localStorage.getItem('session') || 'null'); } catch { return null; } };
-  let panel, usersBox, bikesBox, refreshButton;
+  let panel, usersBox, bikesBox, refreshButton, approvalBox;
 
   function createPanel() {
     if (panel || !document.querySelector('#bikes')) return;
@@ -25,18 +24,22 @@
     panel.style.margin = '24px 0';
     panel.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-        <div><h3>Administrator dashboard</h3><p class="note">Manage registered bikes and review member accounts.</p></div>
+        <div><h3>Administrator dashboard</h3><p class="note">Review membership requests and manage registered bikes.</p></div>
         <button type="button" class="btn ghost" id="adminRefresh">Refresh data</button>
       </div>
-      <h3 class="mt">Members</h3><div id="adminMembers" class="cards"></div>
+      <h3 class="mt">Pending member approvals</h3><div id="adminApprovals" class="cards"></div>
+      <h3 class="mt">All members</h3><div id="adminMembers" class="cards"></div>
       <h3 class="mt">All registered bikes</h3><div id="adminBikes" class="cards"></div>`;
     const bikesSection = document.querySelector('#bikes');
     bikesSection.insertBefore(panel, bikesSection.querySelector('.split'));
     usersBox = panel.querySelector('#adminMembers');
+    approvalBox = panel.querySelector('#adminApprovals');
     bikesBox = panel.querySelector('#adminBikes');
     refreshButton = panel.querySelector('#adminRefresh');
     refreshButton.addEventListener('click', loadDashboard);
     bikesBox.addEventListener('click', onBikeAction);
+    usersBox.addEventListener('click', onApprovalAction);
+    approvalBox.addEventListener('click', onApprovalAction);
   }
 
   async function loadDashboard() {
@@ -44,9 +47,18 @@
     refreshButton.disabled = true;
     try {
       const [users, bikes] = await Promise.all([request('/admin/users'), request('/bikes')]);
+      const pendingUsers = users.filter(user => user.approvalStatus === 'pending');
+      approvalBox.innerHTML = pendingUsers.length ? pendingUsers.map(user => `
+        <article class="card"><h4>${esc(user.name)}</h4><p>${esc(user.email)}<br>Barangay: ${esc(user.brgy)}</p>
+          <div class="row"><button type="button" class="btn primary" data-approval-id="${esc(user.id)}" data-approval-status="approved">Approve</button>
+          <button type="button" class="btn ghost" data-approval-id="${esc(user.id)}" data-approval-status="rejected">Reject</button></div></article>`).join('')
+        : '<div class="empty glass">No pending membership requests.</div>';
       usersBox.innerHTML = users.length ? users.map(user => `
         <article class="card"><h4>${esc(user.name)}${user.isAdmin ? ' <span class="tag">Admin</span>' : ''}</h4>
-          <p>${esc(user.email)}<br>Barangay: ${esc(user.brgy)}</p></article>`).join('')
+          <p>${esc(user.email)}<br>Barangay: ${esc(user.brgy)}</p>
+          <span class="tag">${esc(user.approvalStatus)}</span>
+          ${!user.isAdmin && user.approvalStatus === 'approved' ? `<div class="row"><button type="button" class="btn ghost" data-approval-id="${esc(user.id)}" data-approval-status="rejected">Revoke approval</button></div>` : ''}
+          ${!user.isAdmin && user.approvalStatus === 'rejected' ? `<div class="row"><button type="button" class="btn primary" data-approval-id="${esc(user.id)}" data-approval-status="approved">Approve member</button></div>` : ''}</article>`).join('')
         : '<div class="empty glass">No members registered.</div>';
       bikesBox.innerHTML = bikes.length ? bikes.map(bike => `
         <article class="card" data-bike-id="${esc(bike.id)}">
@@ -59,6 +71,22 @@
     } catch (error) {
       usersBox.innerHTML = `<div class="empty glass">Could not load admin data: ${esc(error.message)}</div>`;
     } finally { refreshButton.disabled = false; }
+  }
+
+  async function onApprovalAction(event) {
+    const button = event.target.closest('[data-approval-id]');
+    if (!button) return;
+    const status = button.dataset.approvalStatus;
+    const verb = status === 'approved' ? 'approve' : 'reject';
+    if (!confirm(`Are you sure you want to ${verb} this membership?`)) return;
+    button.disabled = true;
+    try {
+      await request(`/admin/users/${encodeURIComponent(button.dataset.approvalId)}/approval`, 'POST', { status });
+      await loadDashboard();
+    } catch (error) {
+      alert(error.message);
+      button.disabled = false;
+    }
   }
 
   async function onBikeAction(event) {
@@ -92,7 +120,8 @@
   function syncAdmin() {
     createPanel();
     if (!panel) return;
-    const isAdmin = session()?.isAdmin === true;
+    const current = session();
+    const isAdmin = current?.isAdmin === true;
     panel.hidden = !isAdmin;
     const adminNav = document.querySelector('#adminNav');
     if (isAdmin && !adminNav) {
@@ -100,16 +129,43 @@
       link.id = 'adminNav'; link.href = '#adminDashboard'; link.textContent = 'Admin';
       document.querySelector('.nav nav')?.insertBefore(link, document.querySelector('#logoutBtn'));
     } else if (!isAdmin && adminNav) adminNav.remove();
+
+    const accessAllowed = !!current && (isAdmin || current.approvalStatus === 'approved');
+    document.querySelectorAll('.locked').forEach(section => { section.hidden = !accessAllowed; });
+    let notice = document.querySelector('#membershipStatus');
+    if (current && !isAdmin && current.approvalStatus !== 'approved') {
+      if (!notice) {
+        notice = document.createElement('p');
+        notice.id = 'membershipStatus';
+        notice.className = 'note';
+        document.querySelector('#welcome')?.append(notice);
+      }
+      notice.textContent = current.approvalStatus === 'rejected'
+        ? 'Your membership request was not approved. Please contact the administrator if you think this is a mistake.'
+        : 'Your account is registered and awaiting administrator approval. Bike registry and routes will unlock once approved.';
+    } else notice?.remove();
     if (isAdmin) loadDashboard();
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncAdmin, { once: true });
-  else syncAdmin();
+  async function syncFromServer() {
+    if (!token()) { syncAdmin(); return; }
+    try {
+      const data = await request('/me');
+      const updated = data.user;
+      localStorage.setItem('session', JSON.stringify(updated));
+      syncAdmin();
+    } catch (error) {
+      // The application handles expired sessions; keep this helper non-blocking.
+      syncAdmin();
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncFromServer, { once: true });
+  else syncFromServer();
   const observer = new MutationObserver(syncAdmin);
   for (const selector of ['#welcome', '#authForms']) {
     const element = document.querySelector(selector);
     if (element) observer.observe(element, { childList: true, subtree: true, attributes: true });
   }
-  // Refresh after the existing bike form finishes its async save handler.
   document.querySelector('#bikeForm')?.addEventListener('submit', () => setTimeout(() => { if (session()?.isAdmin) loadDashboard(); }, 1200));
 })();
