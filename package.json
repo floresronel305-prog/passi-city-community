@@ -4,5 +4,6 @@
   "description": "Passi City Community - cyclists platform. Developer: Ronel Sigaya Flores",
   "main": "server.js",
   "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=18" },
+  "dependencies": { "nodemailer": "^6.10.1" }
 }
