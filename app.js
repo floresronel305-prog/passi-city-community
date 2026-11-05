@@ -71,7 +71,7 @@ const BARANGAYS = [
   'Mambiranan Pequeño',
   'Mambunan',
   'Man-it',
-   'Mantulang',
+  'Mantulang',
   'Mulapula',
   'Nagsulang',
   'Pagaypay',
@@ -93,7 +93,7 @@ const BARANGAYS = [
 const ROUTES = [
   { name: 'City Loop', level: 'Easy', color: '#1668e3', pts: [[11.1086, 122.6428], [11.1130, 122.6490], [11.1190, 122.6470], [11.1210, 122.6390], [11.1150, 122.6340], [11.1086, 122.6428]] },
   { name: 'Riverside Sprint', level: 'Moderate', color: '#0ea5a4', pts: [[11.1086, 122.6428], [11.1020, 122.6500], [11.0950, 122.6560], [11.0880, 122.6640], [11.0820, 122.6720]] },
-  { name: 'San Enrique Compo', level: 'Hard', color: '#e0773a', pts: [[11.1086, 122.6428], [11.1000, 122.6330], [11.0920, 122.6250], [11.0860, 122.6160], [11.0790, 122.6090], [11.0720, 122.6020]] },
+  { name: 'San Enrique Compo', level: 'Hard', color: '#e0773a', pts: [[11.1086, 122.6428], [11.1000, 122.6330], [11.0920, 122.6250], [11.0860, 122.6160], [11.0790, 122.6090], [11.0720, 122.6020], [11.0650, 122.5950]] },
   { name: 'Agcararao Mountain View Resort', level: 'Moderate', color: '#7c4dff', pts: [[11.1086, 122.6428], [11.1180, 122.6560], [11.1280, 122.6650], [11.1370, 122.6720], [11.1450, 122.6800]] },
 ];
 const STOPS = [
@@ -118,7 +118,7 @@ const pathKm = p => p.slice(1).reduce((s, x, i) => s + haversine(p[i], x), 0);
 
 /* ---------- UI helpers ---------- */
 let toastT;
-const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2800); };
+const toast = m => { const t = $('#toast'); if (!t) return; t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2800); };
 const brgyOptions = BARANGAYS.map(b => `<option>${b}</option>`).join('');
 $('#brgySel').innerHTML = $('#brgySel2').innerHTML = brgyOptions;
 
@@ -216,27 +216,38 @@ const ROUTING_URL = 'https://router.project-osrm.org/route/v1/driving/';
 function asLonLat(points) { return points.map(([lat, lon]) => `${lon},${lat}`).join(';'); }
 async function roadRoute(points) {
   const url = `${ROUTING_URL}${asLonLat(points)}?overview=full&geometries=geojson&steps=false`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Routing service returned ${response.status}`);
-  const data = await response.json();
-  if (data.code !== 'Ok' || !data.routes?.[0]?.geometry?.coordinates?.length) throw new Error('No road route found');
-  // OSRM returns [longitude, latitude]; Leaflet uses [latitude, longitude].
-  return data.routes[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1200);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Routing service returned ${response.status}`);
+    const data = await response.json();
+    if (data.code !== 'Ok' || !data.routes?.[0]?.geometry?.coordinates?.length) throw new Error('No road route found');
+    return data.routes[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 function renderRouteList() {
   $('#routeList').innerHTML = ROUTES.map((r, i) =>
     `<div class="route" data-i="${i}"><b>${r.name}</b><span>${pathKm(r.pts).toFixed(1)} km</span><br><small>${r.level}</small></div>`).join('');
 }
 async function loadRoadRoutes() {
-  await Promise.all(ROUTES.map(async (route, i) => {
+  const useRemoteRouting = !(navigator.connection && navigator.connection.saveData);
+  if (!useRemoteRouting) {
+    renderRouteList();
+    return;
+  }
+  await Promise.allSettled(ROUTES.map(async (route, i) => {
     try {
       const points = await roadRoute(route.waypoints || route.pts);
       route.roadPts = points;
       route.pts = points;
-      layers[i].setLatLngs(points);
-      layers[i].setTooltipContent(`${route.name} · ${pathKm(points).toFixed(1)} km`);
+      if (layers[i]) {
+        layers[i].setLatLngs(points);
+        layers[i].setTooltipContent(`${route.name} · ${pathKm(points).toFixed(1)} km`);
+      }
     } catch (err) {
-      // Keep the locally defined route visible if the routing service is unavailable.
       console.warn(`Could not road-route ${route.name}; showing its saved route instead.`, err);
     }
   }));
@@ -244,12 +255,12 @@ async function loadRoadRoutes() {
 }
 function initMap() {
   if (mapReady) { setTimeout(() => map.invalidateSize(), 100); return; }
+  if (!document.getElementById('map')) return;
   mapReady = true;
   map = L.map('map').setView([11.1086, 122.6428], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
   L.marker([11.1086, 122.6428]).addTo(map).bindPopup('Passi City Hall area (start point)');
 
-  // Community stops: Gastion, local stores, and a vulcanizing / bike-repair shop.
   STOPS.forEach(s => {
     L.marker(s.latlng).addTo(map).bindPopup(`<b>${esc(s.name)}</b><br>Type: ${esc(s.type)}`);
   });
@@ -263,7 +274,8 @@ function initMap() {
 $('#routeList').addEventListener('click', e => {
   const el = e.target.closest('.route'); if (!el) return;
   $$('.route').forEach(x => x.classList.toggle('on', x === el));
-  const l = layers[el.dataset.i]; layers.forEach(x => x.setStyle({ weight: 4, opacity: .35 })); l.setStyle({ weight: 7, opacity: 1 }).bringToFront();
+  const l = layers[el.dataset.i]; if (!l) return;
+  layers.forEach(x => x.setStyle({ weight: 4, opacity: .35 })); l.setStyle({ weight: 7, opacity: 1 }).bringToFront();
   map.fitBounds(l.getBounds(), { padding: [40, 40] }); l.openTooltip();
 });
 
@@ -273,6 +285,7 @@ const fmt = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math
 $('#rideBtn').onclick = () => {
   if (watch !== null) return stopRide();
   if (!navigator.geolocation) return toast('Geolocation is not supported on this device.');
+  if (!map) return toast('Map is still loading. Please try again in a moment.');
   pts = []; dist = 0; t0 = Date.now();
   track?.remove(); track = L.polyline([], { color: '#ff3b6b', weight: 6 }).addTo(map);
   $('#rideBtn').textContent = 'Stop ride'; $('#rideBtn').classList.add('stop');
@@ -287,7 +300,8 @@ $('#rideBtn').onclick = () => {
   }, err => { toast('Location error: ' + err.message); stopRide(); }, { enableHighAccuracy: true, maximumAge: 2000 });
 };
 function stopRide() {
-  navigator.geolocation.clearWatch(watch); watch = null; clearInterval(timer);
+  if (watch !== null) navigator.geolocation.clearWatch(watch);
+  watch = null; clearInterval(timer);
   $('#rideBtn').textContent = 'Start ride'; $('#rideBtn').classList.remove('stop');
   $('#rideNote').textContent = `Ride finished: ${dist.toFixed(2)} km in ${$('#lTime').textContent}.`;
 }
