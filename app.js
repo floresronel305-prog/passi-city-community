@@ -259,6 +259,7 @@ function initMap() {
     .bindTooltip(`${r.name} · ${pathKm(r.pts).toFixed(1)} km`));
   loadRoadRoutes();
   setTimeout(() => map.invalidateSize(), 150);
+  locateUser();
 }
 $('#routeList').addEventListener('click', e => {
   const el = e.target.closest('.route'); if (!el) return;
@@ -270,6 +271,31 @@ $('#routeList').addEventListener('click', e => {
 /* ---------- live ride tracking ---------- */
 let watch = null, track = null, me = null, pts = [], dist = 0, t0 = 0, timer = null;
 const fmt = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+let initialLocationRequested = false;
+function locateUser() {
+  if (initialLocationRequested) return;
+  initialLocationRequested = true;
+  if (!navigator.geolocation) {
+    $('#rideNote').textContent = 'Location is unavailable because geolocation is not supported on this device.';
+    return;
+  }
+  $('#rideNote').textContent = 'Finding your location… Allow location access when prompted.';
+  navigator.geolocation.getCurrentPosition(position => {
+    if (!map) return;
+    const c = [position.coords.latitude, position.coords.longitude];
+    me = L.circleMarker(c, { radius: 9, color: '#fff', weight: 3, fillColor: '#ff3b6b', fillOpacity: 1 })
+      .addTo(map).bindPopup('Your current location');
+    map.setView(c, 16);
+    $('#rideNote').textContent = 'Your location is ready. Start a ride to track your route.';
+  }, err => {
+    const messages = {
+      1: 'Location permission was denied. Allow location access in your browser to use live tracking.',
+      2: 'Your location could not be determined. Check that location services are enabled and try again.',
+      3: 'Finding your location timed out. Try again when you have a better GPS signal.'
+    };
+    $('#rideNote').textContent = messages[err.code] || 'Unable to get your location. You can still browse the routes.';
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
 $('#rideBtn').onclick = () => {
   if (watch !== null) return stopRide();
   if (!navigator.geolocation) return toast('Geolocation is not supported on this device.');
@@ -287,7 +313,8 @@ $('#rideBtn').onclick = () => {
   }, err => { toast('Location error: ' + err.message); stopRide(); }, { enableHighAccuracy: true, maximumAge: 2000 });
 };
 function stopRide() {
-  navigator.geolocation.clearWatch(watch); watch = null; clearInterval(timer);
+  if (watch !== null) navigator.geolocation.clearWatch(watch);
+  watch = null; clearInterval(timer);
   $('#rideBtn').textContent = 'Start ride'; $('#rideBtn').classList.remove('stop');
   $('#rideNote').textContent = `Ride finished: ${dist.toFixed(2)} km in ${$('#lTime').textContent}.`;
 }
