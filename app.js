@@ -45,9 +45,9 @@ const ROUTES = [
   { name: 'Agcararao Mountain View Resort', level: 'Moderate', color: '#7c4dff', pts: [[11.1086, 122.6428], [11.1180, 122.6560], [11.1280, 122.6650], [11.1370, 122.6720], [11.1450, 122.6800]] },
 ];
 const STOPS = [
-  { name: 'Gastronomy (Gastion)', type: 'Food', latlng: [11.1110, 122.6450] },
-  { name: 'Local Sari-sari Stores', type: 'Store', latlng: [11.1140, 122.6410] },
-  { name: 'Bike Vulcanizing Shop', type: 'Repair', latlng: [11.1070, 122.6390] }
+  { name: 'Gastion', type: 'Food', latlng: [11.1110, 122.6450] },
+  { name: 'Local Stores', type: 'Store', latlng: [11.1140, 122.6410] },
+  { name: 'Vulcanizing Shop', type: 'Bike repair', latlng: [11.1070, 122.6390] }
 ];
 const FLOW = [
   ['Visit site', 'Anyone can see the community stats, the flowchart and the featured routes.'],
@@ -160,21 +160,52 @@ $('#bikeList').addEventListener('click', async e => {
 
 /* ---------- map & routes ---------- */
 let map, layers = [], mapReady = false;
+const ROUTING_URL = 'https://router.project-osrm.org/route/v1/driving/';
+function asLonLat(points) { return points.map(([lat, lon]) => `${lon},${lat}`).join(';'); }
+async function roadRoute(points) {
+  const url = `${ROUTING_URL}${asLonLat(points)}?overview=full&geometries=geojson&steps=false`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Routing service returned ${response.status}`);
+  const data = await response.json();
+  if (data.code !== 'Ok' || !data.routes?.[0]?.geometry?.coordinates?.length) throw new Error('No road route found');
+  // OSRM returns [longitude, latitude]; Leaflet uses [latitude, longitude].
+  return data.routes[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+}
+function renderRouteList() {
+  $('#routeList').innerHTML = ROUTES.map((r, i) =>
+    `<div class="route" data-i="${i}"><b>${r.name}</b><span>${pathKm(r.pts).toFixed(1)} km</span><br><small>${r.level}</small></div>`).join('');
+}
+async function loadRoadRoutes() {
+  await Promise.all(ROUTES.map(async (route, i) => {
+    try {
+      const points = await roadRoute(route.waypoints || route.pts);
+      route.roadPts = points;
+      route.pts = points;
+      layers[i].setLatLngs(points);
+      layers[i].setTooltipContent(`${route.name} · ${pathKm(points).toFixed(1)} km`);
+    } catch (err) {
+      // Keep the locally defined route visible if the routing service is unavailable.
+      console.warn(`Could not road-route ${route.name}; showing its saved route instead.`, err);
+    }
+  }));
+  renderRouteList();
+}
 function initMap() {
   if (mapReady) { setTimeout(() => map.invalidateSize(), 100); return; }
   mapReady = true;
   map = L.map('map').setView([11.1086, 122.6428], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
   L.marker([11.1086, 122.6428]).addTo(map).bindPopup('Passi City Hall area (start point)');
-  
-  // Add Stops (Gastion, Stores, Vulcanizing)
+
+  // Community stops: Gastion, local stores, and a vulcanizing / bike-repair shop.
   STOPS.forEach(s => {
-    L.marker(s.latlng).addTo(map).bindPopup(`<b>${s.name}</b><br>Type: ${s.type}`);
+    L.marker(s.latlng).addTo(map).bindPopup(`<b>${esc(s.name)}</b><br>Type: ${esc(s.type)}`);
   });
 
-  $('#routeList').innerHTML = ROUTES.map((r, i) =>
-    `<div class="route" data-i="${i}"><b>${r.name}</b><span>${pathKm(r.pts).toFixed(1)} km</span><br><small>${r.level}</small></div>`).join('');
-  layers = ROUTES.map(r => L.polyline(r.pts, { color: r.color, weight: 5, opacity: .85 }).addTo(map).bindTooltip(`${r.name} · ${pathKm(r.pts).toFixed(1)} km`));
+  renderRouteList();
+  layers = ROUTES.map(r => L.polyline(r.pts, { color: r.color, weight: 5, opacity: .85 }).addTo(map)
+    .bindTooltip(`${r.name} · ${pathKm(r.pts).toFixed(1)} km`));
+  loadRoadRoutes();
   setTimeout(() => map.invalidateSize(), 150);
 }
 $('#routeList').addEventListener('click', e => {
