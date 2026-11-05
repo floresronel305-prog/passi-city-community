@@ -36,22 +36,18 @@ const API = {
 };
 
 /* ---------- data ---------- */
-const BARANGAYS = [
-  'Agdahon', 'Agdayao', 'Aglalana', 'Agtabo', 'Agtambo', 'Alimono',
-  'Arac', 'Ayuyan', 'Bacuranan', 'Bagacay', 'Batu', 'Bayan',
-  'Bitaogan', 'Buenavista', 'Buyo', 'Cabunga', 'Cadilang', 'Cairohan',
-  'Dalicanan', 'Gegachac', 'Gemat-y', 'Gemumua-agahon', 'Gines Viejo', 'Imbang Grande',
-  'Jaguimitan', 'Libo-o', 'Maasin', 'Magdungao', 'Malag-it Grande', 'Malag-it Pequeño',
-  'Mambiranan Grande', 'Mambiranan Pequeño', 'Man-it', 'Mantulang', 'Mulapula', 'Nueva Union',
-  'Pagaypay', 'Pangi', 'Poblacion Ilawod', 'Poblacion Ilaya', 'Punong', 'Quinagaringan Grande',
-  'Quinagaringan Pequeño', 'Sablogon', 'Salngan', 'Santo Tomas', 'Sarapan', 'Tagubong',
-  'Talongonan', 'Tubod', 'Tuburan'
-];
+const BARANGAYS = ['Agdahon', 'Alimodias', 'Bagacay', 'Buenavista', 'Dalicanan', 'Dolores', 'Magdungao', 'Mambunan',
+  'Mulapula', 'Nagsulang', 'Pandan', 'Poblacion Ilawod', 'Poblacion Ilaya', 'Tagubong'];
 const ROUTES = [
   { name: 'City Loop', level: 'Easy', color: '#1668e3', pts: [[11.1086, 122.6428], [11.1130, 122.6490], [11.1190, 122.6470], [11.1210, 122.6390], [11.1150, 122.6340], [11.1086, 122.6428]] },
   { name: 'Riverside Sprint', level: 'Moderate', color: '#0ea5a4', pts: [[11.1086, 122.6428], [11.1020, 122.6500], [11.0950, 122.6560], [11.0880, 122.6640], [11.0820, 122.6720]] },
-  { name: 'Highland Climb', level: 'Hard', color: '#e0773a', pts: [[11.1086, 122.6428], [11.1000, 122.6330], [11.0920, 122.6250], [11.0860, 122.6160], [11.0790, 122.6090], [11.0720, 122.6020]] },
-  { name: 'Sunrise Gravel', level: 'Moderate', color: '#7c4dff', pts: [[11.1086, 122.6428], [11.1180, 122.6560], [11.1280, 122.6650], [11.1370, 122.6720], [11.1450, 122.6800]] },
+  { name: 'San Enrique Compo', level: 'Hard', color: '#e0773a', pts: [[11.1086, 122.6428], [11.1000, 122.6330], [11.0920, 122.6250], [11.0860, 122.6160], [11.0790, 122.6090], [11.0720, 122.6020]] },
+  { name: 'Agcararao Mountain View Resort', level: 'Moderate', color: '#7c4dff', pts: [[11.1086, 122.6428], [11.1180, 122.6560], [11.1280, 122.6650], [11.1370, 122.6720], [11.1450, 122.6800]] },
+];
+const STOPS = [
+  { name: 'Gastronomy (Gastion)', type: 'Food', latlng: [11.1110, 122.6450] },
+  { name: 'Local Sari-sari Stores', type: 'Store', latlng: [11.1140, 122.6410] },
+  { name: 'Bike Vulcanizing Shop', type: 'Repair', latlng: [11.1070, 122.6390] }
 ];
 const FLOW = [
   ['Visit site', 'Anyone can see the community stats, the flowchart and the featured routes.'],
@@ -170,6 +166,12 @@ function initMap() {
   map = L.map('map').setView([11.1086, 122.6428], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
   L.marker([11.1086, 122.6428]).addTo(map).bindPopup('Passi City Hall area (start point)');
+  
+  // Add Stops (Gastion, Stores, Vulcanizing)
+  STOPS.forEach(s => {
+    L.marker(s.latlng).addTo(map).bindPopup(`<b>${s.name}</b><br>Type: ${s.type}`);
+  });
+
   $('#routeList').innerHTML = ROUTES.map((r, i) =>
     `<div class="route" data-i="${i}"><b>${r.name}</b><span>${pathKm(r.pts).toFixed(1)} km</span><br><small>${r.level}</small></div>`).join('');
   layers = ROUTES.map(r => L.polyline(r.pts, { color: r.color, weight: 5, opacity: .85 }).addTo(map).bindTooltip(`${r.name} · ${pathKm(r.pts).toFixed(1)} km`));
@@ -209,4 +211,3 @@ function stopRide() {
 
 /* ---------- boot ---------- */
 applySession(API.me());
-   
